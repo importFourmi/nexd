@@ -1,4 +1,5 @@
 import setuptools
+from pysoft import pylib
 
 with open("README.md", "r") as fh:
     long_description = fh.read()
@@ -15,6 +16,8 @@ setuptools.setup(
      long_description_content_type="text/markdown",
      url="https://github.com/importFourmi/nexd",
      packages=setuptools.find_packages(),
+     py_modules=['pylib'],
+     install_requires=['pysoft'],
      classifiers=[
          "Programming Language :: Python :: 3",
      ],
