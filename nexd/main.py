@@ -7,6 +7,8 @@ with contextlib.redirect_stdout(open(os.devnull, 'w')):
     import matplotlib
     import numpy as np
     import matplotlib.pyplot as plt
+    from mtcnn import MTCNN
+    import mediapipe as mp
 
 
 class Nexd:
@@ -16,11 +18,12 @@ class Nexd:
         self.__args = args
         self.__kwargs = kwargs
         self.methods = [f for f in dir(self) if not f.startswith('_')]
+        self.__detector = MTCNN()
         
-        if self.__kwargs.get("verbose") == 0:
-            self.verbose = False
-        else:
-            self.verbose = True
+        if self.__kwargs.get("verbose") == 1:
+            print("Bienvenue dans Nexd, les fonctions disponibles sont les suivantes et vous pouvez utiliser help(fonction) pour plus d'informations :")
+            for fonction in self.methods:
+                print("  -", fonction)
 
     def load_img(self, img_path):
         """
@@ -96,7 +99,7 @@ class Nexd:
         """
         
         try:
-            return np.array([file for file in os.listdir(path) for ext in list_img if file.endswith(ext)])
+            return np.array([file for file in os.listdir(path) for ext in list_ext if file.endswith(ext)])
                 
         except Exception as e:
             print(e)
@@ -126,14 +129,11 @@ class Nexd:
                 
                 # si il y a qu'un seul rectangle
                 if len(np.array(coords).shape) == 1:
-                    # on dessine le rectangle
                     coords = np.array([coords])
                 
-                # si c'est une liste de rectangles
-                else:
-                    for coord in coords:
-                        # on dessine tous les rectangles
-                        img = cv2.rectangle(img, (coord[0], coord[1]), (coord[2], coord[3]), color, thickness)
+                for coord in coords:
+                    # on dessine tous les rectangles
+                    img = cv2.rectangle(img, (coord[0], coord[1]), (coord[2], coord[3]), color, thickness)
                 return img
             
             else:
@@ -218,7 +218,8 @@ class Nexd:
 
     def extension_rect(self, coords, coef):
         """
-        Fonction qui multiplie les coordonnées par un coefficient (O: pas d'extension, 0.5: size*2, 1:size*3, etc.).
+        Fonction qui multiplie les coordonnées par un coefficient (0: pas d'extension, 0.5: size*2, 1:size*3, etc.).
+        Le format est le suivant: [[xmin, ymin, xmax, ymax]].
         
         :param coords: liste de coordonnées de rectangles
         :param coef: coefficient multiplicateur
@@ -232,7 +233,6 @@ class Nexd:
             
             # si il y a qu'un seul rectangle
             if len(np.array(coords).shape) == 1:
-                # on dessine le rectangle
                 coords = np.array([coords])
                 
             for coord in coords:
@@ -251,11 +251,146 @@ class Nexd:
         except Exception as e:
             print(e)
             return None
+        
+        
+    def extract_landmarks(self, img, static_image_mode=True, max_num_faces=1, refine_landmarks=True, min_detection_confidence=0.9, min_tracking_confidence=0.9, normalized=False):
+        """
+        Fonction qui retourne les landmarks d'un visage si il est détécté.
+        
+        :param img: image
+        :param (static_image_mode): détection des visages pour des images sans lien
+        :param (max_num_faces): nombre maximum de visages à détecter
+        :param (refine_landmarks): génére des points de repère supplémentaires
+        :param (min_detection_confidence): seuil de détection de visage
+        :param (min_tracking_confidence): seuil de suivi des landmarks du visages (ignoré si static_image_mode)
+        :param (normalized): X et Y normalisés si True / X et Y en pixels si False
+        
+        :return: [X, Y, Z(profondeur de chaque repère)]
+        """
+        
+        try:
+            mp_face_mesh = mp.solutions.face_mesh
+            face_mesh =  mp_face_mesh.FaceMesh(max_num_faces=max_num_faces,
+                                               refine_landmarks=refine_landmarks,
+                                               min_detection_confidence=min_detection_confidence,
+                                               min_tracking_confidence=min_tracking_confidence)
+            
+            # si l'image est un path à télécharger
+            if isinstance(img, str):
+                img = self.load_img(img)
+            
+            if np.any(img):
+                # on analyse l'image avec le FaceMesh
+                results = face_mesh.process(np.array(img))
+
+                # si on a pas de détection, on retourne une liste vide
+                if not results.multi_face_landmarks:
+                    return np.array([])
+
+                # sinon, on extrait les coordonnées des points
+                else:
+                    list_landmarks = list(results.multi_face_landmarks[0].landmark)
+
+                    if normalized:
+                        return np.array([[i.x, i.y, i.z] for i in list_landmarks]).T
+
+                    else:
+                        return np.array([[i.x*img.shape[1], i.y*img.shape[0], i.z] for i in list_landmarks]).T
+            else:
+                return np.array([])
+                
+        except Exception as e:
+            print(e)
+            return None
+    
+    
+    def face_detection(self, img, coef_confidence=0.99, keep_keypoints=False, coef_extend=0.5):
+        """
+        Fonction qui retourne les contours des visages détéctés.
+        Le format est le suivant: [[xmin, ymin, xmax, ymax]].
+        
+        :param img: image
+        :param (coef_confidence): coefficient de certitude des visages
+        :param (keep_keypoints): retourne également 5 keypoints sur le visage
+        :param (coef_extend): coefficient pour agrandir les contours des visages (ignoré si keep_keypoints)
+        
+        :return: les coordonnées [[xmin, ymin, xmax, ymax]]
+        """
+
+        try:
+            # si l'image est un path à télécharger
+            if isinstance(img, str):
+                img = self.load_img(img)
+
+            # liste pour stocker les coordonnées
+            list_detections = []
+            list_keypoints = []
+
+            for detection in self.__detector.detect_faces(img):
+                x, y, w, h = detection["box"]
+
+                # on retourne des coordonnées x_min, y_min, x_max, y_max
+                if detection["confidence"] > coef_confidence:
+                    list_detections.append([x, y, x+w, y+h])
+                    list_keypoints.append(detection["keypoints"])
+
+            if keep_keypoints:
+                return np.array(list_detections), np.array(list_keypoints)
+
+            else:
+                new_list_detections = []
+                for coord in self.extension_rect(list_detections, coef_extend):
+                    xmin, ymin, xmax, ymax = coord
+                    new_list_detections.append([max(0, xmin), max(0, ymin), min(img.shape[1], xmax), min(img.shape[0], ymax)])
+                return np.array(new_list_detections)
+
+        except Exception as e:
+            print(e)
+            return None
+    
+
+    def show_face_nexd(self, img, coef_detect=0.9, coef_extend=0.3):
+        """
+        Fonction qui montre quelques possibilités de la classe.
+        
+        :param img: image
+        :param (coef_detect): coefficient de certitude de détection des visages
+        :param (coef_extend): coefficient de grandissement des visages
+        
+        :return: l'image avec les modifications
+        """
+
+        try:
+            # si l'image est un path à télécharger
+            if isinstance(img, str):
+                img = self.load_img(img)
+
+            # on extrait les visages
+            coords = self.face_detection(img, coef_extend=coef_extend, coef_confidence=coef_detect)
+
+            # on regarde pour chaque visage si on détecte des landmarks
+            landmarks = []
 
 
-nexd = Nexd(verbose=0)
+            for coord in coords:
+                ld = self.extract_landmarks(img[coord[1]:coord[3], coord[0]:coord[2]], min_detection_confidence=coef_detect)
+                
+                if np.any(ld):
+                    landmarks.append([[pix + coord[0] for pix in ld[0]], [pix + coord[1] for pix in ld[1]], ld[2]])
+                    img = self.draw_rect(img, coord, thickness=5, color=[0, 255, 0])
+                else:
+                    img = self.draw_rect(img, coord, thickness=5, color=[255, 0, 0])
 
-if nexd.verbose:
-    print("Bienvenue dans Nexd, les fonctions disponibles sont les suivantes et vous pouvez utiliser help(fonction) pour plus d'informations :")
-    for fonction in nexd.methods:
-        print("  -", fonction)
+
+            for ld in landmarks:
+                img = self.draw_pixels(img, ld[0], ld[1], ld[2])
+
+            self.imshow(img)
+            
+        except Exception as e:
+                print(e)
+                return None
+
+nexd = Nexd()
+
+nexd.show_face_nexd("foule.png")
