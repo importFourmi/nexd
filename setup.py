@@ -6,7 +6,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
      name='nexd',  
-     version='1.0.0',
+     version='1.1.1',
      scripts=['nexd/main.py'] ,
      author="importFourmi",
      author_email="calvin.galagain@gmail.com",
@@ -17,7 +17,9 @@ setuptools.setup(
      packages=setuptools.find_packages(),
      install_requires=[ 'opencv-python',
                         'matplotlib',   
-                        'numpy',                  
+                        'numpy',
+                        'mtcnn',
+                        'mediapipe'              
                       ],
      classifiers=[
          "Programming Language :: Python :: 3",
