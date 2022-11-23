@@ -223,9 +223,9 @@ class Nexd_img:
 
         # if there is only one rectangle
         if len(np.array(coords).shape) == 1:
-            coordinates = np.array([coords])
+            coords = np.array([coords])
 
-        for coord in coordinates:
+        for coord in coords:
             # we draw all the rectangles
             img = cv2.rectangle(img, (coord[0], coord[1]), (coord[2], coord[3]), color, thickness)
         return img
