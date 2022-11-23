@@ -2,395 +2,815 @@ import os
 import contextlib
 
 with contextlib.redirect_stdout(open(os.devnull, 'w')):
-    #importations utiles sans les messages des librairies
+    # useful imports without library messages
     import cv2
     import matplotlib
     import numpy as np
     import matplotlib.pyplot as plt
-    from mtcnn import MTCNN
-    import mediapipe as mp
+    import glob
+    from IPython.display import clear_output
+    from sklearn.model_selection import train_test_split
+    import pickle
 
-
-class Nexd:
-    
+class Nexd_img:
     def __init__(self, *args, **kwargs):
+        super(Nexd_img, self).__init__()
+        self.__author = "importFourmi"
+        self.__args = args
+        self.__kwargs = kwargs        
+    
+    def im_load(self, img_path):
+        """
+        Function that downloads the image in RGB.
+
+        Parameters
+        ----------
+            - img_path: image path
+
+        Returns
+        -------
+            - the image
+        """
+
+        if not(os.path.isfile(img_path)):
+            print("Image not found")
+            return np.array([])
+
+        else :
+            # the image is created with OpenCV
+            img = cv2.imread(img_path)
+
+            # we put the right color
+            return cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+
+
+    def im_show(self, img, title="", dynamic=False, shape=False):
+        """
+        Function that displays the image.
+
+        Parameters
+        ----------
+            - img: image
+            - (title=""): image title
+            - (dynamic=False): image update
+            - (shape=True): size display
+
+        Returns
+        -------
+            - None
+        """
+
+        img = np.array(img).copy()
+
+        if shape:
+            # we display the dimensions of the image
+            print(np.array(img).shape)
+
+        # if there is a title we display it
+        if title:
+            plt.title(title)
+
+        # the axes are not displayed
+        plt.axis('off')
+
+        # delete old output
+        if dynamic:
+            clear_output(wait=True)
+
+        # if the image is grayscale
+        if len(np.array(img).shape) == 2 or np.array(img).shape[2] == 1:
+            plt.imshow(img, cmap='gray')
+
+        else:
+            plt.imshow(img)
+        plt.show()
+
+
+    def im_redim(self, img, size, interpolator=cv2.INTER_LANCZOS4):
+        """
+        Function that resizes an image.
+
+        Parameters
+        ----------
+            - img: image
+            - size: size of the new image
+            - (interpolator=cv2.INTER_LANCZOS4): interpolator that manages pixels
+                  INTER_NEAREST: nearest neighbor
+                  INTER_LINEAR: bilinear
+                  INTER_AREA: pixel area relationship
+                  INTER_CUBIC: bicubic over a 4×4 pixel neighborhood
+                  INTER_LANCZOS4: Lanczos on an 8×8 pixel neighborhood
+
+        Returns
+        -------
+            - resized image
+        """
+
+        return cv2.resize(img.copy(), (int(size[1]),int(size[0])), interpolation=interpolator)
+
+
+    def im_save(self, filename, img):
+        """
+        Function that saves an image.
+
+        Parameters
+        ----------
+            - filename: string representing the name of the image
+            - img: image
+
+        Returns
+        -------
+            - None
+        """
+
+        # if the image is grayscale
+        if len(np.array(img).shape) == 2 or np.array(img).shape[2]==1:
+            # normal order of parameters
+            if isinstance(filename, str) and not isinstance(img, str):
+                plt.imsave(filename, img, cmap='gray')
+
+            # if the order of the parameters is wrong
+            elif isinstance(img, str) and not isinstance(filename, str):
+                plt.imsave(img, filename, cmap='gray')
+
+        else:
+
+            # normal order of parameters
+            if isinstance(filename, str) and not isinstance(img, str):
+                plt.imsave(filename, img)
+
+            # if the order of the parameters is wrong
+            elif isinstance(img, str) and not isinstance(filename, str):
+                plt.imsave(img, filename)
+    
+    
+    def im_2gray(self, img):
+        """
+        Function that returns the image in gray (0.299*R + 0.587*G + 0.114*B).
+
+        Parameters
+        ----------
+            -img: image
+
+        Returns
+        -------
+            - the image in gray
+        """
+
+        # we apply the transformation
+        return cv2.cvtColor(img.copy(), cv2.COLOR_BGR2GRAY)
+    
+    
+    def im_draw_pixels(self, img, x, y, value=None, color=[0, 255, 0], radius=None):
+        """
+        Function that draws pixels on the image.
+
+        Parameters
+        ----------
+            - img: image
+            - x: list of x to draw
+            - y: list of y to draw
+            - (value=None): list of values for each pixel
+            - (color=[0, 255, 0]): pixel color if there are no values for each pixel
+            - (radius=None): pixel radius
+
+        Returns
+        -------
+            - the image with the pixels
+        """
+
+        img = np.array(img).copy()
+
+        if radius is None:
+            radius = int(0.01*max(img.shape[0], img.shape[1]))
+
+        if not(value is None):
+            # linearly normalize data between 0.0 and 1.0
+            norm = matplotlib.colors.Normalize(vmin=min(value), vmax=max(value))
+
+            # transform values into colors
+            rgba = plt.get_cmap('inferno')(norm(value.astype(np.float64)))
+
+            # we draw a circle of 1% of the size of the image (of the color of the value)
+            for i in range(len(x)):
+                img = cv2.circle(img, (int(x[i]), int(y[i])), radius, rgba[i][:-1]*255, -1)
+
+        else:
+            # we draw a circle (in green) of 1% of the size of the image
+            for i in range(len(x)):
+                img = cv2.circle(img, (int(x[i]), int(y[i])), radius, color, -1)
+
+        return img
+    
+    
+    def im_draw_rect(self, img, coords, color=(255, 0, 0), thickness=1):
+        """
+        Function that draws rectangles on an image.
+        
+        Parameters
+        ----------
+            - img: image on which we want to draw rectangles
+            - coords: list of rectangle coordinates (x_start, y_start, x_end, y_end)
+            - (color=(255, 0, 0)): color of the rectangles to draw
+            - (thickness=1): thickness of the rectangles (-1 for a full rectangle)
+        
+        Returns
+        -------
+            - the image with the rectangles
+        """
+
+        img = np.array(img).copy()
+
+        # if there is only one rectangle
+        if len(np.array(coords).shape) == 1:
+            coordinates = np.array([coords])
+
+        for coord in coordinates:
+            # we draw all the rectangles
+            img = cv2.rectangle(img, (coord[0], coord[1]), (coord[2], coord[3]), color, thickness)
+        return img
+    
+    
+    def im_stack(self, list_img):
+        """
+        Function that returns the overlay of images.
+
+        Parameters
+        ----------
+            - list_img: list of images
+
+        Returns
+        -------
+            - superposition of images
+        """
+
+        return np.stack(list_img, axis=3).mean(axis=3)/255
+    
+    
+    def im_affine_transform(self, img, pts1, pts2):
+        """
+        Function that applies an affine transformation to the image.
+
+        Parameters
+        ----------
+            - img: image
+            - pts1: list of origin coordinates of the three points
+            - pts2: list of destination coordinates of the three points
+
+        Returns
+        -------
+            - the transformed image
+        """
+
+        rows, cols = img.shape[:2]
+
+        M = cv2.getAffineTransform(np.float32(pts1), np.float32(pts2))
+        return cv2.warpAffine(np.array(img).copy(), M, (cols, rows))
+    
+    
+    def im_rotation(self, img, direction):
+        """
+        Function that applies a rotation of to the image.
+
+        Parameters
+        ----------
+            -img:image
+            - direction: direction of rotation of the image
+                  "left" / -90
+                  "right" / 90
+                  "flip" / 180
+
+        Returns
+        -------
+            - the rotated image
+        """
+        
+        img = np.array(img).copy()
+
+        if direction == "left" or direction == -90:
+            return cv2.rotate(img, cv2.ROTATE_90_COUNTERCLOCKWISE)
+
+        elif direction == "right" or direction == 90:
+            return cv2.rotate(img, cv2.ROTATE_90_CLOCKWISE)
+
+        elif direction == "flip" or direction == 180:
+            return cv2.rotate(img, cv2.ROTATE_180)
+        else:
+            return img
+    
+    
+    def im_empty(self, size, value=0):
+        """
+        Function that returns an empty image.
+
+        Parameters
+        ----------
+            - size: image size
+            - (value=0): value (RGB possible) to set for each pixel
+
+        Returns
+        -------
+            - the image
+        """
+
+        return value * np.ones(size, np.uint8)
+    
+    
+    def im_square(self, img, maxi=224):
+        """
+        Function that returns the best square containing the image.
+
+        Parameters
+        ----------
+            - img: image
+            - (maxi=224): size of the square
+
+        Returns
+        -------
+            - the image
+        """
+        
+        img = np.array(img).copy()
+        
+        # create background image
+        empty = self.im_empty((maxi, maxi, 3), value=0)
+        
+        coef = max(img.shape[0], img.shape[1])/maxi
+        
+        # resize
+        redim = self.im_redim(np.array(img).copy(), (img.shape[0]/coef, img.shape[1]/coef))
+        
+        # add to the background
+        empty[:redim.shape[0], :redim.shape[1], :] += redim
+        return empty
+
+    
+    def im_crop(self, img):
+        """
+        Function that removes black edges from an image.
+
+        Parameters
+        ----------
+            - img: image
+
+        Returns
+        -------
+            - the image
+        """
+        
+        img = np.array(img).copy()
+        
+        # create gray image
+        gray = self.im_2gray(img)
+        
+        # mask the black value
+        mask = gray>0
+        
+        return img[np.ix_(mask.any(1), mask.any(0))]
+
+
+class Nexd_utils:
+    def __init__(self, *args, **kwargs):
+        super(Nexd_utils, self).__init__()
+        self.__author = "importFourmi"
+        self.__args = args
+        self.__kwargs = kwargs
+
+    def list_ext(self, path=None, list_ext=[".png", ".jpg", ".jpeg"]):
+        """
+        Function that lists the extensions of a folder.
+
+        Parameters
+        ----------
+            - (path=None): path of the folder (None if current folder)
+            - (list_ext=[".png", ".jpg", ".jpeg"]): list of possible extensions (default: list of images)
+
+        Returns
+        -------
+            - the list of paths
+        """
+        
+        return np.array([file for file in os.listdir(path) for ext in list_ext if file.endswith(ext)])
+    
+    
+    def search_sub_folders(self, depth=1, path="", custom=None):
+        """
+        Function that searchs sub-folders.
+
+        Parameters
+        ----------
+            - (depth=1): search depth
+            - (path=""): path to search in a particular folder
+            - (custom=None): custom request if needed
+
+        Returns
+        -------
+            - the list of subfolder paths
+        """
+        
+        if custom is None:
+            where = path+"*/"*depth + "*"
+        else:
+            where = custom
+        return [i.replace("\\","/") for i in glob.glob(where)]
+
+    
+    def save(self, name, p_object):
+        """
+        Function that saves an object.
+
+        Parameters
+        ----------
+            - name: name of the expected file
+            - p_object: the object to save
+
+        Returns
+        -------
+            - None
+        """
+        
+        open_file = open(name+".pkl", "wb")
+        pickle.dump(p_object, open_file)
+        open_file.close()
+
+        
+    def load(self, name):
+        """
+        Function that load a file.
+
+        Parameters
+        ----------
+            - name: name of the file to load
+
+        Returns
+        -------
+            - the object
+        """
+        
+        open_file = open(name+".pkl", "rb")
+        val = pickle.load(open_file)
+        open_file.close()
+        return val
+    
+    
+    def ia_history(self, history_dic, figsize=(15, 5), title=""):
+        """
+        Function that displays the history of a history stored in a dictionary.
+
+        Parameters
+        ----------
+            - history_dic: dictionary with loss and accuracy
+            - (figsize=(15, 5)): figure size
+            - (title=""): image title
+
+        Returns
+        -------
+            - None
+        """
+
+        plt.figure(figsize=figsize)
+
+        if title:
+            plt.suptitle(title, fontsize=20)
+
+        colors = ["red", "blue"]
+
+        if len(history_dic) == 1:
+            for key in history_dic:
+                values = history_dic[key]
+                X = range(len(values))
+                plt.plot(X, values, color=colors[0], label=key)
+                texte = str(key)
+            
+            plt.title("Evolution of " + texte)
+            plt.xlabel("epochs")
+            plt.ylabel(texte)
+            plt.legend()
+            plt.show()
+        
+        elif len(history_dic) == 2:
+            if "acc" in history_dic:
+                accuracy = history_dic["acc"]
+
+            else:
+                accuracy = history_dic["accuracy"]
+
+
+            loss = history_dic["loss"]
+
+            X = range(len(loss))
+
+            plt.subplot(121)
+            plt.plot(X, loss, color=colors[0], label='loss')
+            plt.title("Evolution of loss")
+            plt.xlabel("epochs")
+            plt.ylabel("loss")
+            plt.legend()
+
+            plt.subplot(122)
+            plt.plot(X, accuracy, color=colors[0], label='accuracy')
+            plt.title("Evolution of accuracy")
+            plt.xlabel("epochs")
+            plt.ylabel("acc")
+            plt.legend()
+            plt.show()
+            
+        elif len(history_dic) == 4:
+            if "acc" in history_dic:
+                accuracy = history_dic["acc"]
+                val_accuracy = history_dic["val_acc"]
+
+            else:
+                accuracy = history_dic["accuracy"]
+                val_accuracy = history_dic["val_accuracy"]
+
+
+            loss = history_dic["loss"]
+            val_loss = history_dic["val_loss"]
+
+            X = range(len(loss))
+
+            plt.subplot(121)
+            plt.plot(X, loss, color=colors[0], label='loss')
+            plt.plot(X, val_loss, color=colors[1], label='val_loss')
+            plt.title("Evolution of loss")
+            plt.xlabel("epochs")
+            plt.ylabel("loss")
+            plt.legend()
+
+            plt.subplot(122)
+            plt.plot(X, accuracy, color=colors[0], label='accuracy')
+            plt.plot(X, val_accuracy, color=colors[1], label='val_accuracy')
+            plt.title("Evolution of accuracy")
+            plt.xlabel("epochs")
+            plt.ylabel("acc")
+            plt.legend()
+            plt.show()
+
+            
+    def rect_redim(self, coords, coef):
+        """
+        Function that multiplies the width and the height of each rectangle by a coefficient (0: no extension, 0.5: size*2, 1:size*3, ...).
+
+        Parameters
+        ----------
+            - coords: list of coordinates of rectangles [[xmin, ymin, xmax, ymax]]
+            - coef: multiplier coefficient
+
+        Returns
+        -------
+            - the new coordinates
+        """
+
+        # where to put the new coordinates
+        result = []
+
+        # if there is only one rectangle
+        if len(np.array(coords).shape) == 1:
+            coords = np.array([coords])
+
+        for coord in coords:
+
+            width = coord[2] - coord[0]
+            height = coord[3] - coord[1]
+
+            result.append([ coord[0] - int((width*coef)/2),
+                            coord[1] - int((height*coef)/2),
+                            coord[2] + int((width*coef)/2),
+                            coord[3] + int((height*coef)/2)
+                          ] )
+
+        return np.array(result)
+    
+    
+    def draw_pixels(self, x, y, value=None, classes=None, title=None, xlabel=None, ylabel=None):
+        """
+        Function that draws the points.
+
+        Parameters
+        ----------
+            - x: list of x to draw
+            - y: list of y to draw
+            - (value=None): list of values for each point
+            - (classes=None): name of the classes of each point if value is not explicit
+            - (title=None): image title
+            - (xlabel=None): xlabel of the image
+            - (ylabel=None): ylabel of the image
+
+        Returns
+        -------
+            - None
+        """
+
+        # if there is a title we display it
+        if title:
+            plt.title(title)
+
+        # if there is an xlabel we display it
+        if xlabel:
+            plt.xlabel(xlabel)
+
+        # if there is a ylabel we display it
+        if ylabel:
+            plt.ylabel(ylabel)
+
+        # we display the points
+        scatter = plt.scatter(x, y, c=value, cmap=plt.cm.Set1)
+
+        # if we have values
+        if not(value is None):
+
+            # if the values are not labeled
+            if classes is None:
+                classes = [str(val) for val in set(value)]
+
+            # add the caption
+            plt.legend(handles=scatter.legend_elements()[0], labels=classes)
+
+        plt.show()
+    
+    
+    def train_test_split(self, X, y, coef=0.2, seed=42):
+        """
+        Split arrays or matrices into random train and test subsets.
+
+        Parameters
+        ----------
+            - X: data
+            - y: label
+            - (coef=0.2): size of test subsets
+            - (seed=42): seed to have same split
+
+        Returns
+        -------
+            - None
+        """
+        
+        return train_test_split(X, y, test_size=coef, random_state=seed)
+
+
+    def rgb_colors(self):
+        """
+        Function that returns an RGB color dictionary.
+
+        Returns
+        -------
+            - the dictionary
+        """
+        
+        return {
+         'maroon': [128, 0, 0],
+         'dark_red': [139, 0, 0],
+         'brown': [165, 42, 42],
+         'firebrick': [178, 34, 34],
+         'crimson': [220, 20, 60],
+         'red': [255, 0, 0],
+         'tomato': [255, 99, 71],
+         'coral': [255, 127, 80],
+         'indian_red': [205, 92, 92],
+         'light_coral': [240, 128, 128],
+         'dark_salmon': [233, 150, 122],
+         'salmon': [250, 128, 114],
+         'light_salmon': [255, 160, 122],
+         'orange_red': [255, 69, 0],
+         'dark_orange': [255, 140, 0],
+         'orange': [255, 165, 0],
+         'gold': [255, 215, 0],
+         'dark_golden_rod': [184, 134, 11],
+         'golden_rod': [218, 165, 32],
+         'pale_golden_rod': [238, 232, 170],
+         'dark_khaki': [189, 183, 107],
+         'khaki': [240, 230, 140],
+         'olive': [128, 128, 0],
+         'yellow': [255, 255, 0],
+         'yellow_green': [154, 205, 50],
+         'dark_olive_green': [85, 107, 47],
+         'olive_drab': [107, 142, 35],
+         'lawn_green': [124, 252, 0],
+         'chartreuse': [127, 255, 0],
+         'green_yellow': [173, 255, 47],
+         'dark_green': [0, 100, 0],
+         'green': [0, 128, 0],
+         'forest_green': [34, 139, 34],
+         'lime': [0, 255, 0],
+         'lime_green': [50, 205, 50],
+         'light_green': [144, 238, 144],
+         'pale_green': [152, 251, 152],
+         'dark_sea_green': [143, 188, 143],
+         'medium_spring_green': [0, 250, 154],
+         'spring_green': [0, 255, 127],
+         'sea_green': [46, 139, 87],
+         'medium_aqua_marine': [102, 205, 170],
+         'medium_sea_green': [60, 179, 113],
+         'light_sea_green': [32, 178, 170],
+         'dark_slate_gray': [47, 79, 79],
+         'teal': [0, 128, 128],
+         'dark_cyan': [0, 139, 139],
+         'aqua': [0, 255, 255],
+         'cyan': [0, 255, 255],
+         'light_cyan': [224, 255, 255],
+         'dark_turquoise': [0, 206, 209],
+         'turquoise': [64, 224, 208],
+         'medium_turquoise': [72, 209, 204],
+         'pale_turquoise': [175, 238, 238],
+         'aqua_marine': [127, 255, 212],
+         'powder_blue': [176, 224, 230],
+         'cadet_blue': [95, 158, 160],
+         'steel_blue': [70, 130, 180],
+         'corn_flower_blue': [100, 149, 237],
+         'deep_sky_blue': [0, 191, 255],
+         'dodger_blue': [30, 144, 255],
+         'light_blue': [173, 216, 230],
+         'sky_blue': [135, 206, 235],
+         'light_sky_blue': [135, 206, 250],
+         'midnight_blue': [25, 25, 112],
+         'navy': [0, 0, 128],
+         'dark_blue': [0, 0, 139],
+         'medium_blue': [0, 0, 205],
+         'blue': [0, 0, 255],
+         'royal_blue': [65, 105, 225],
+         'blue_violet': [138, 43, 226],
+         'indigo': [75, 0, 130],
+         'dark_slate_blue': [72, 61, 139],
+         'slate_blue': [106, 90, 205],
+         'medium_slate_blue': [123, 104, 238],
+         'medium_purple': [147, 112, 219],
+         'dark_magenta': [139, 0, 139],
+         'dark_violet': [148, 0, 211],
+         'dark_orchid': [153, 50, 204],
+         'medium_orchid': [186, 85, 211],
+         'purple': [128, 0, 128],
+         'thistle': [216, 191, 216],
+         'plum': [221, 160, 221],
+         'violet': [238, 130, 238],
+         'magenta': [255, 0, 255],
+         'orchid': [218, 112, 214],
+         'medium_violet_red': [199, 21, 133],
+         'pale_violet_red': [219, 112, 147],
+         'deep_pink': [255, 20, 147],
+         'hot_pink': [255, 105, 180],
+         'light_pink': [255, 182, 193],
+         'pink': [255, 192, 203],
+         'antique_white': [250, 235, 215],
+         'beige': [245, 245, 220],
+         'bisque': [255, 228, 196],
+         'blanched_almond': [255, 235, 205],
+         'wheat': [245, 222, 179],
+         'corn_silk': [255, 248, 220],
+         'lemon_chiffon': [255, 250, 205],
+         'light_golden_rod_yellow': [250, 250, 210],
+         'light_yellow': [255, 255, 224],
+         'saddle_brown': [139, 69, 19],
+         'sienna': [160, 82, 45],
+         'chocolate': [210, 105, 30],
+         'peru': [205, 133, 63],
+         'sandy_brown': [244, 164, 96],
+         'burly_wood': [222, 184, 135],
+         'tan': [210, 180, 140],
+         'rosy_brown': [188, 143, 143],
+         'moccasin': [255, 228, 181],
+         'navajo_white': [255, 222, 173],
+         'peach_puff': [255, 218, 185],
+         'misty_rose': [255, 228, 225],
+         'lavender_blush': [255, 240, 245],
+         'linen': [250, 240, 230],
+         'old_lace': [253, 245, 230],
+         'papaya_whip': [255, 239, 213],
+         'sea_shell': [255, 245, 238],
+         'mint_cream': [245, 255, 250],
+         'slate_gray': [112, 128, 144],
+         'light_slate_gray': [119, 136, 153],
+         'light_steel_blue': [176, 196, 222],
+         'lavender': [230, 230, 250],
+         'floral_white': [255, 250, 240],
+         'alice_blue': [240, 248, 255],
+         'ghost_white': [248, 248, 255],
+         'honeydew': [240, 255, 240],
+         'ivory': [255, 255, 240],
+         'azure': [240, 255, 255],
+         'snow': [255, 250, 250],
+         'black': [0, 0, 0],
+         'dim_gray': [105, 105, 105],
+         'gray': [128, 128, 128],
+         'dark_gray': [169, 169, 169],
+         'silver': [192, 192, 192],
+         'light_gray': [211, 211, 211],
+         'gainsboro': [220, 220, 220],
+         'white_smoke': [245, 245, 245],
+         'white': [255, 255, 255]
+         }
+
+class Nexd(Nexd_img, Nexd_utils):
+
+    def __init__(self, *args, **kwargs):
+        super(Nexd, self).__init__()
         self.__author = "importFourmi"
         self.__args = args
         self.__kwargs = kwargs
         self.methods = [f for f in dir(self) if not f.startswith('_')]
-        self.__detector = MTCNN()
-        
+
+
         if self.__kwargs.get("verbose") == 1:
-            print("Bienvenue dans Nexd, les fonctions disponibles sont les suivantes et vous pouvez utiliser help(fonction) pour plus d'informations :")
+            print("Welcome to Nexd, the available functions are as follows and you can use help(function) for more information:")
             for fonction in self.methods:
                 print("  -", fonction)
-
-    def load_img(self, img_path):
-        """
-        Fonction qui télécharge l'image en RGB.
-        
-        :param img_path: path de l'image
-        
-        :return: l'image
-        """
-        
-        try:
-            if not(os.path.isfile(img_path)):
-                print("Image not found")
-                return np.array([])
-
-            else :
-                # l'image est créée avec OpenCV
-                img = cv2.imread(img_path)  
-                
-                # on met de la bonne couleur
-                return cv2.cvtColor(img, cv2.COLOR_BGR2RGB)  
-        
-        except Exception as e:
-            print(e)
-            return None
-
-
-    def imshow(self, img, title=""):
-        """
-        Fonction qui affiche l'image.
-        
-        :param img: image (ou path vers l'image)
-        :param (title): titre de l'image
-        
-        :return: ne retourne rien
-        """
-        
-        try:
-            # si l'image est un path à télécharger
-            if isinstance(img, str): 
-                img = self.load_img(img)
-
-            if np.any(img):
-                
-                img = img.copy()
-                
-                # on affiche les dimensions de l'image
-                print(np.array(img).shape)
-
-                # si il y a un titre on l'affiche
-                if title:
-                    plt.title(title)
-                    
-                # on n'affiche pas les axes
-                plt.axis('off')  
-
-                plt.imshow(img)
-                plt.show()
-                
-        except Exception as e:
-            print(e)
-            return None
-        
-    
-    def ext_list(self, path=None, list_ext=[".png", ".jpg", ".jpeg"]):
-        """
-        Fonction qui liste les extensions fournies en paramètre d'un dossier.
-        
-        :param path: path du dossier à extraire (None si dossier courant)
-        :param (list_ext): liste des extensions possibles (par défaut: liste des images)
-        
-        :return: la liste des chemins
-        """
-        
-        try:
-            return np.array([file for file in os.listdir(path) for ext in list_ext if file.endswith(ext)])
-                
-        except Exception as e:
-            print(e)
-            return None       
-
-
-    def draw_rect(self, img, coords, color=(255, 0, 0), thickness=1):
-        """
-        Fonction qui dessine des rectangles sur une image.
-        
-        :param img: image sur laquelle on veut dessiner des rectangles
-        :param coords: liste des coordonnées des rectangles (x_start, y_start, x_end, y_end)
-        :param (color): couleur des rectangles à dessiner
-        :param (thickness): épaisseur des rectangles (-1 pour un rectangle plein)
-        
-        :return: l'image avec les rectangles
-        """
-        
-        try:
-            # si l'image est un path à télécharger
-            if isinstance(img, str):
-                img = self.load_img(img)
-            
-            if np.any(img):
-                
-                img = img.copy()
-                
-                # si il y a qu'un seul rectangle
-                if len(np.array(coords).shape) == 1:
-                    coords = np.array([coords])
-                
-                for coord in coords:
-                    # on dessine tous les rectangles
-                    img = cv2.rectangle(img, (coord[0], coord[1]), (coord[2], coord[3]), color, thickness)
-                return img
-            
-            else:
-                return np.array([])
-            
-        except Exception as e:
-            print(e)
-            return None
-
-
-    def draw_pixels(self, img, x, y, value=None, color=[0, 255, 0], radius=None):
-        """
-        Fonction qui dessine les pixels sur l'image.
-        
-        :param x: liste des x à dessiner
-        :param y: liste des y à dessiner
-        :param (value): liste des valeurs pour chaque pixel
-        :param (color): couleur des pixels si il n'y a pas de valeurs pour chaque pixel
-        :param (radius): radius des pixels
-            
-        :return: l'image avec les pixels
-        """
-        
-        try:
-            # si l'image est un path à télécharger
-            if isinstance(img, str):
-                img = self.load_img(img)
-
-            if np.any(img):
-
-                img = img.copy()
-                
-                if radius is None:
-                    radius = int(0.01*max(img.shape[0], img.shape[1]))                    
-
-                if not(value is None):
-                    # normalise linéairement les données entre 0.0 et 1.0
-                    norm = matplotlib.colors.Normalize(vmin=min(value), vmax=max(value))
-
-                    # transforme les valeurs en couleurs
-                    rgba = plt.get_cmap('inferno')(norm(value.astype(np.float64)))
-
-                    # on dessine un cercle de 1% de la taille de l'image (de la couleur de la valeur)
-                    for i in range(len(x)):
-                        img = cv2.circle(img, (int(x[i]), int(y[i])), radius, rgba[i][:-1]*255, -1)
-
-                else:
-                    # on dessine un cercle (en vert) de 1% de la taille de l'image
-                    for i in range(len(x)):
-                        img = cv2.circle(img, (int(x[i]), int(y[i])), radius, color, -1)
-
-                return img
-        
-        except Exception as e:
-            print(e)
-            return None
-
-
-    def imsave(self, filename, img):
-        """
-        Fonction qui permet d'enregistrer une image.
-
-        :param filename: string représentant le nom de l'image
-        :param img: image à enregistrer
-            
-        :return: ne retourne rien
-        """
-
-        try:
-            # ordre normal des paramètres
-            if isinstance(filename, str) and not isinstance(img, str):
-                plt.imsave(filename, img)
-            
-            # si on se trompe sur l'ordre des paramètres
-            elif isinstance(img, str) and not isinstance(filename, str):
-                plt.imsave(img, filename)
-        
-        except Exception as e:
-            print(e)
-            return None
-
-
-    def extension_rect(self, coords, coef):
-        """
-        Fonction qui multiplie les coordonnées par un coefficient (0: pas d'extension, 0.5: size*2, 1:size*3, etc.).
-        Le format est le suivant: [[xmin, ymin, xmax, ymax]].
-        
-        :param coords: liste de coordonnées de rectangles
-        :param coef: coefficient multiplicateur
-        
-        :return: les nouvelles coordonnées
-        """
-        
-        try:
-            # où mettre les nouvelles coordonnées
-            result = []
-            
-            # si il y a qu'un seul rectangle
-            if len(np.array(coords).shape) == 1:
-                coords = np.array([coords])
-                
-            for coord in coords:
-
-                width = coord[2] - coord[0]
-                height = coord[3] - coord[1]
-
-                result.append([ coord[0] - int((width*coef)/2), 
-                                coord[1] - int((height*coef)/2), 
-                                coord[2] + int((width*coef)/2), 
-                                coord[3] + int((height*coef)/2)
-                              ] )
-
-            return np.array(result)
-        
-        except Exception as e:
-            print(e)
-            return None
-        
-        
-    def extract_landmarks(self, img, static_image_mode=True, max_num_faces=1, refine_landmarks=True, min_detection_confidence=0.9, min_tracking_confidence=0.9, normalized=False):
-        """
-        Fonction qui retourne les landmarks d'un visage si il est détécté.
-        
-        :param img: image
-        :param (static_image_mode): détection des visages pour des images sans lien
-        :param (max_num_faces): nombre maximum de visages à détecter
-        :param (refine_landmarks): génére des points de repère supplémentaires
-        :param (min_detection_confidence): seuil de détection de visage
-        :param (min_tracking_confidence): seuil de suivi des landmarks du visages (ignoré si static_image_mode)
-        :param (normalized): X et Y normalisés si True / X et Y en pixels si False
-        
-        :return: [X, Y, Z(profondeur de chaque repère)]
-        """
-        
-        try:
-            mp_face_mesh = mp.solutions.face_mesh
-            face_mesh =  mp_face_mesh.FaceMesh(max_num_faces=max_num_faces,
-                                               refine_landmarks=refine_landmarks,
-                                               min_detection_confidence=min_detection_confidence,
-                                               min_tracking_confidence=min_tracking_confidence)
-            
-            # si l'image est un path à télécharger
-            if isinstance(img, str):
-                img = self.load_img(img)
-            
-            if np.any(img):
-                # on analyse l'image avec le FaceMesh
-                results = face_mesh.process(np.array(img))
-
-                # si on a pas de détection, on retourne une liste vide
-                if not results.multi_face_landmarks:
-                    return np.array([])
-
-                # sinon, on extrait les coordonnées des points
-                else:
-                    list_landmarks = list(results.multi_face_landmarks[0].landmark)
-
-                    if normalized:
-                        return np.array([[i.x, i.y, i.z] for i in list_landmarks]).T
-
-                    else:
-                        return np.array([[i.x*img.shape[1], i.y*img.shape[0], i.z] for i in list_landmarks]).T
-            else:
-                return np.array([])
-                
-        except Exception as e:
-            print(e)
-            return None
-    
-    
-    def face_detection(self, img, coef_confidence=0.99, keep_keypoints=False, coef_extend=0.5):
-        """
-        Fonction qui retourne les contours des visages détéctés.
-        Le format est le suivant: [[xmin, ymin, xmax, ymax]].
-        
-        :param img: image
-        :param (coef_confidence): coefficient de certitude des visages
-        :param (keep_keypoints): retourne également 5 keypoints sur le visage
-        :param (coef_extend): coefficient pour agrandir les contours des visages (ignoré si keep_keypoints)
-        
-        :return: les coordonnées [[xmin, ymin, xmax, ymax]]
-        """
-
-        try:
-            # si l'image est un path à télécharger
-            if isinstance(img, str):
-                img = self.load_img(img)
-
-            # liste pour stocker les coordonnées
-            list_detections = []
-            list_keypoints = []
-
-            for detection in self.__detector.detect_faces(img):
-                x, y, w, h = detection["box"]
-
-                # on retourne des coordonnées x_min, y_min, x_max, y_max
-                if detection["confidence"] > coef_confidence:
-                    list_detections.append([x, y, x+w, y+h])
-                    list_keypoints.append(detection["keypoints"])
-
-            if keep_keypoints:
-                return np.array(list_detections), np.array(list_keypoints)
-
-            else:
-                new_list_detections = []
-                for coord in self.extension_rect(list_detections, coef_extend):
-                    xmin, ymin, xmax, ymax = coord
-                    new_list_detections.append([max(0, xmin), max(0, ymin), min(img.shape[1], xmax), min(img.shape[0], ymax)])
-                return np.array(new_list_detections)
-
-        except Exception as e:
-            print(e)
-            return None
-    
-
-    def show_face_nexd(self, img, coef_detect=0.9, coef_extend=0.3):
-        """
-        Fonction qui montre quelques possibilités de la classe.
-        
-        :param img: image
-        :param (coef_detect): coefficient de certitude de détection des visages
-        :param (coef_extend): coefficient de grandissement des visages
-        
-        :return: l'image avec les modifications
-        """
-
-        try:
-            # si l'image est un path à télécharger
-            if isinstance(img, str):
-                img = self.load_img(img)
-
-            # on extrait les visages
-            coords = self.face_detection(img, coef_extend=coef_extend, coef_confidence=coef_detect)
-
-            # on regarde pour chaque visage si on détecte des landmarks
-            landmarks = []
-
-
-            for coord in coords:
-                ld = self.extract_landmarks(img[coord[1]:coord[3], coord[0]:coord[2]], min_detection_confidence=coef_detect)
-                
-                if np.any(ld):
-                    landmarks.append([[pix + coord[0] for pix in ld[0]], [pix + coord[1] for pix in ld[1]], ld[2]])
-                    img = self.draw_rect(img, coord, thickness=5, color=[0, 255, 0])
-                else:
-                    img = self.draw_rect(img, coord, thickness=5, color=[255, 0, 0])
-
-
-            for ld in landmarks:
-                img = self.draw_pixels(img, ld[0], ld[1], ld[2])
-
-            self.imshow(img)
-            
-        except Exception as e:
-                print(e)
-                return None
-
-nexd = Nexd()
-
-nexd.show_face_nexd("foule.png")
