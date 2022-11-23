@@ -5,24 +5,22 @@ with open("README.md", "r") as fh:
 
 
 setuptools.setup(
-     name='nexd',  
-     version='1.1.1',
+     name='nexd',
+     version='1.3.0',
      scripts=['nexd/main.py'] ,
      author="importFourmi",
      author_email="calvin.galagain@gmail.com",
-     description="Python utility package",
+     description="Ma librairie de fonctions utiles",
      long_description=long_description,
      long_description_content_type="text/markdown",
      url="https://github.com/importFourmi/nexd",
      packages=setuptools.find_packages(),
      install_requires=[ 'opencv-python',
-                        'matplotlib',   
+                        'matplotlib',
                         'numpy',
-                        'mtcnn',
-                        'mediapipe'              
+                        'scikit-learn',
                       ],
      classifiers=[
          "Programming Language :: Python :: 3",
      ],
 )
-
