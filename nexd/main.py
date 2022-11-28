@@ -11,6 +11,7 @@ with contextlib.redirect_stdout(open(os.devnull, 'w')):
     from IPython.display import clear_output
     from sklearn.model_selection import train_test_split
     import pickle
+    from scipy.ndimage import rotate
 
 class Nexd_img:
     def __init__(self, *args, **kwargs):
@@ -268,35 +269,20 @@ class Nexd_img:
         return cv2.warpAffine(np.array(img).copy(), M, (cols, rows))
     
     
-    def im_rotation(self, img, direction):
+    def im_rotation(self, img, angle, reshape=True):
         """
         Function that applies a rotation of to the image.
 
         Parameters
         ----------
-            -img:image
-            - direction: direction of rotation of the image
-                  "left" / -90
-                  "right" / 90
-                  "flip" / 180
-
+            - img:image
+            - angle: clockwise angle 
+            - (reshape=True): adapted output shape
         Returns
         -------
             - the rotated image
         """
-        
-        img = np.array(img).copy()
-
-        if direction == "left" or direction == -90:
-            return cv2.rotate(img, cv2.ROTATE_90_COUNTERCLOCKWISE)
-
-        elif direction == "right" or direction == 90:
-            return cv2.rotate(img, cv2.ROTATE_90_CLOCKWISE)
-
-        elif direction == "flip" or direction == 180:
-            return cv2.rotate(img, cv2.ROTATE_180)
-        else:
-            return img
+        return rotate(np.array(img).copy(), -angle, reshape=reshape)
     
     
     def im_empty(self, size, value=0):
@@ -316,32 +302,61 @@ class Nexd_img:
         return value * np.ones(size, np.uint8)
     
     
-    def im_square(self, img, maxi=224):
+    def im_square(self, img, maxi=224, mirror=False):
         """
         Function that returns the best square containing the image.
-
+        
         Parameters
         ----------
             - img: image
             - (maxi=224): size of the square
+            - (mirror=False): to mirror the edges to complete the square (black if False)
 
         Returns
         -------
             - the image
         """
-        
         img = np.array(img).copy()
-        
+
         # create background image
         empty = self.im_empty((maxi, maxi, 3), value=0)
+
+        if img.shape[0] > img.shape[1]:
+            coef = img.shape[0]/maxi
+            size = int(img.shape[1]/coef)
+            redim = self.im_redim(img, (maxi, size))
+
+            w = maxi-redim.shape[1]
+            y = int(w/2)
+
+            empty[:, y:size+y, :] += redim
+            if mirror :
+                empty[:, :y, :] += np.fliplr(redim[:,:y,:])
+                empty[:, -y-(maxi-(size+2*y)):, :] += np.fliplr(redim[:,-y-(maxi-(size+2*y)):,:])
+            else:
+                empty[:, :y, :] += self.im_empty(empty[:, :y, :].shape, value=0)
+                empty[:, -y-(maxi-(size+2*y)):, :] += self.im_empty(empty[:, -y-(maxi-(size+2*y)):, :].shape, value=0)
         
-        coef = max(img.shape[0], img.shape[1])/maxi
+        elif img.shape[0] < img.shape[1]:
+            coef = img.shape[1]/maxi
+            size = int(img.shape[0]/coef)
+            redim = self.im_redim(img, (size, maxi))
+
+            h = maxi-redim.shape[0]
+            x = int(h/2)
+
+            empty[x:size+x, :, :] += redim
+            
+            if mirror :
+                empty[:x, :, :] += redim[:x,:,:][::-1]
+                empty[-x-(maxi-(size+2*x)):, :, :] += redim[-x-(maxi-(size+2*x)):,:,:][::-1]
+            else:
+                empty[:x, :, :] += self.im_empty(empty[:x, :, :].shape, value=0)
+                empty[-x-(maxi-(size+2*x)):, :, :] += self.im_empty(empty[-x-(maxi-(size+2*x)):, :, :].shape, value=0)
+
+        else:
+            return self.im_redim(img, (maxi, maxi))
         
-        # resize
-        redim = self.im_redim(np.array(img).copy(), (img.shape[0]/coef, img.shape[1]/coef))
-        
-        # add to the background
-        empty[:redim.shape[0], :redim.shape[1], :] += redim
         return empty
 
     
@@ -494,7 +509,6 @@ class Nexd_utils:
 
             else:
                 accuracy = history_dic["accuracy"]
-
 
             loss = history_dic["loss"]
 
@@ -808,6 +822,7 @@ class Nexd(Nexd_img, Nexd_utils):
         self.__args = args
         self.__kwargs = kwargs
         self.methods = [f for f in dir(self) if not f.startswith('_')]
+        self.version = "1.3.2"
 
 
         if self.__kwargs.get("verbose") == 1:
